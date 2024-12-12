@@ -1,71 +1,102 @@
 package storage
 
-import (
-    "math/rand"
-    "net/url"
-    "strings"
-    "sync"
-)
+	import (
+		"math/rand"
+		"net/url"
+		"strings"
+		"sync"
+		"sort"
+		"time"
+	)
 
-var (
-    urlMap       = make(map[string]string)
-    domainCounts = make(map[string]int)
-    mu           sync.RWMutex
-)
+	var (
+		urlMap       = make(map[string]string)  // Map to store the short URL to original URL mapping
+		domainCounts = make(map[string]int)     // Map to keep track of the count of URLs shortened per domain
+		mu           sync.RWMutex               // Mutex to ensure goroutine-safe access to maps
+	)
 
-func GetShortURL(originalURL string) string {
-    mu.RLock()
-    for short, url := range urlMap {
-        if url == originalURL {
-            mu.RUnlock()
-            return short
-        }
-    }
-    mu.RUnlock()
+	func init() {
+		rand.Seed(time.Now().UnixNano())        // Seed the random number generator
+	}
 
-    mu.Lock()
-    defer mu.Unlock()
-    short := generateShortURL()
-    urlMap[short] = originalURL
-    incrementDomainCount(originalURL)
-    return short
-}
+	// GetShortURL retrieves or creates a new short URL for a given original URL.
+	// It ensures that each original URL maps to exactly one short URL and increments domain counts.
+	func GetShortURL(originalURL string) string {
+		mu.Lock()
+		defer mu.Unlock()
+		// Check if the URL has already been shortened
+		for short, url := range urlMap {
+			if url == originalURL {
+				return short
+			}
+		}
+		// Generate a new short URL
+		short := generateShortURL()
+		urlMap[short] = originalURL
+		incrementDomainCount(originalURL)
+		return short
+	}
 
-func ResolveURL(shortURL string) (string, bool) {
-    mu.RLock()
-    originalURL, exists := urlMap[shortURL]
-    mu.RUnlock()
-    return originalURL, exists
-}
+	// ResolveURL looks up the short URL and returns the corresponding original URL if it exists.
+	func ResolveURL(shortURL string) (string, bool) {
+		mu.RLock()
+		originalURL, exists := urlMap[shortURL]
+		mu.RUnlock()
+		return originalURL, exists
+	}
 
-func GetTopDomains() map[string]int {
-    mu.RLock()
-    defer mu.RUnlock()
-    return copyTopDomains()
-}
+	// GetTopDomains returns a map of the top 3 domains and their counts.
+	func GetTopDomains() map[string]int {
+		mu.RLock()
+		defer mu.RUnlock()
+		return copyTopDomains()
+	}
 
-func generateShortURL() string {
-    b := make([]rune, 8)
-    letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-    for i := range b {
-        b[i] = letters[rand.Intn(len(letters))]
-    }
-    return string(b)
-}
+	// generateShortURL creates a random 8-character alphanumeric string.
+	func generateShortURL() string {
+		b := make([]rune, 8)
+		letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+		for i := range b {
+			b[i] = letters[rand.Intn(len(letters))]
+		}
+		return string(b)
+	}
 
-func incrementDomainCount(originalURL string) {
-    parsedURL, err := url.Parse(originalURL)
-    if err != nil {
-        return
-    }
-    domain := strings.Split(parsedURL.Hostname(), ".")[0]
-    domainCounts[domain]++
-}
+	// incrementDomainCount increments the count of URLs shortened for a specific domain.
+	func incrementDomainCount(originalURL string) {
+		parsedURL, err := url.Parse(originalURL)
+		if err != nil {
+			return  // Handle error appropriately depending on your application's requirements
+		}
+		domain := strings.Split(parsedURL.Hostname(), ".")[0]
+		domainCounts[domain]++
+	}
 
-func copyTopDomains() map[string]int {
-    topDomains := make(map[string]int, len(domainCounts))
-    for domain, count := range domainCounts {
-        topDomains[domain] = count
-    }
-    return topDomains
-}
+	// copyTopDomains creates a sorted list of domains by count and returns the top 3.
+	func copyTopDomains() map[string]int {
+		// Make a slice of all domains and their counts
+		type kv struct {
+			Key   string
+			Value int
+		}
+
+		var ss []kv
+		for k, v := range domainCounts {
+			ss = append(ss, kv{k, v})
+		}
+
+		// Sort slice based on the count
+		sort.Slice(ss, func(i, j int) bool {
+			return ss[i].Value > ss[j].Value
+		})
+
+		// Pick top 3 domains
+		topDomains := make(map[string]int)
+		for i, kv := range ss {
+			if i >= 3 {
+				break
+			}
+			topDomains[kv.Key] = kv.Value
+		}
+		return topDomains
+	}
