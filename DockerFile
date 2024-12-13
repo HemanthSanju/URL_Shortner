@@ -1,0 +1,30 @@
+# Stage 1: Building the application
+FROM golang:1.18-alpine as builder
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Copy go.mod and go.sum and download dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the rest of the application's source code
+COPY . .
+
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o shorturlservice
+
+# Stage 2: Prepare the runtime container
+FROM alpine:latest  
+RUN apk --no-cache add ca-certificates
+
+WORKDIR /root/
+
+# Copy the compiled binary from the builder stage
+COPY --from=builder /app/shorturlservice .
+
+# Expose port 8080 for the application
+EXPOSE 8080
+
+# Command to run the executable
+CMD ["./shorturlservice"]
