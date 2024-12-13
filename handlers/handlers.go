@@ -35,11 +35,10 @@ func HandleRedirect(w http.ResponseWriter, r *http.Request) {
 func HandleMetrics(w http.ResponseWriter, r *http.Request) {
     metrics := storage.GetTopDomains()
 
-    w.Header().Set("Content-Type", "text/plain") // Set content type as plain text for simple output
+    w.Header().Set("Content-Type", "text/plain")
     for domain, count := range metrics {
-        // Remove the top-level domain part (assuming format "secondlevel.tld")
         parts := strings.Split(domain, ".")
-        sld := parts[0]  // Get only the second-level domain part
+        sld := parts[0]
         fmt.Fprintf(w, "%s: %d\n", sld, count)
     }
 }
